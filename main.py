@@ -76,4 +76,4 @@ async def get_events():
 
 if __name__ == "__main__":
     #asyncio.run(create_database())
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=3826, reload=True)
