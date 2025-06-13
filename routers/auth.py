@@ -30,8 +30,7 @@ async def signup(user_data: UserCreate, db: AsyncSession = Depends(get_db),
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Имя уже занято")
 
     if isinstance(current_user_data, User):
-        current_user: User = current_user_data
-        is_super = current_user.role == RoleEnum.superadmin
+        is_super = current_user_data.role == RoleEnum.superadmin
 
     user = await create_user(db, user_data.username, user_data.password, RoleEnum.admin if is_super else RoleEnum.user)
 

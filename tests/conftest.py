@@ -2,6 +2,9 @@
 
 from dotenv import load_dotenv
 from os import getenv
+
+from fastapi import Depends
+
 load_dotenv()
 import pytest
 import pytest_asyncio
@@ -76,3 +79,17 @@ async def client(db_session):
         yield ac
 
     fastapi_app.dependency_overrides.clear()  # type: ignore[attr-defined]
+
+from routers.auth import router as auth_router
+from routers.categories import router as cat_router
+from routers.offers import router as offers_router
+from db.dependencies import get_current_admin_user, get_current_superadmin_user
+
+async def fake_admin():
+    return True
+
+async def fake_superadmin():
+    return True
+
+fastapi_app.dependency_overrides[get_current_admin_user] = lambda: Depends(lambda: True)
+fastapi_app.dependency_overrides[get_current_superadmin_user] = lambda: Depends(lambda: True)

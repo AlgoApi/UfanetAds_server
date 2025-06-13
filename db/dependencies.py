@@ -84,9 +84,17 @@ async def get_or_create_user(
 
 
 async def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != RoleEnum.admin and current_user.role != RoleEnum.superadmin:
+    if current_user.role != RoleEnum.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав (требуются права администратора)",
+        )
+    return current_user
+
+async def get_current_superadmin_user(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != RoleEnum.superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав (требуются права super)",
         )
     return current_user

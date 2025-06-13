@@ -1,11 +1,14 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from fastapi.responses import JSONResponse
-from db.dependencies import get_db, get_current_active_user, get_current_admin_user, get_or_create_user
-from db.crud import get_offers_by_city_and_category, create_offer, log_stat
+from db.dependencies import get_db, get_current_active_user, get_current_admin_user, get_or_create_user, \
+    get_current_superadmin_user
+from db.crud import get_offers_by_city_and_category, create_offer, log_stat, delete_offer, add_city_to_offer, \
+    remove_city_from_offer, get_offers_by_title
 from schemas.category import CategoryRead
 from schemas.offer import OfferCreate, OfferRead
 from db.models import Offer, User
@@ -84,3 +87,62 @@ async def add_offer(
     #    raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ошибка при создании предложения")
     finally:
         pass
+
+
+@router.delete("/{offer_id}", status_code=status.HTTP_200_OK,
+               summary="Удаление предложения")
+async def delete_offer_rout(
+    offer_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin=Depends(get_current_superadmin_user),
+):
+    try:
+        res = await delete_offer(db, offer_id)
+        return res
+    except NoResultFound:
+        raise HTTPException(status_code=404, detail="Предложение не найдено")
+
+# Управление связями
+@router.post("/{offer_id}/cities/{city_id}", status_code=status.HTTP_200_OK,
+             summary="Добавить город к предложению")
+async def add_city(
+    offer_id: int,
+    city_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin=Depends(get_current_admin_user),
+):
+    try:
+        res = await add_city_to_offer(db, offer_id, city_id)
+        return res
+    except NoResultFound as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/{offer_id}/cities/{city_id}", status_code=status.HTTP_200_OK,
+               summary="Удалить город из предложения")
+async def remove_city(
+    offer_id: int,
+    city_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin=Depends(get_current_superadmin_user),
+):
+    try:
+        res = await remove_city_from_offer(db, offer_id, city_id)
+        return res
+    except NoResultFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@router.get(
+    "/search",
+    response_model=List[OfferRead],
+    summary="Поиск предложений по заголовку (подстрока)",
+    status_code=status.HTTP_200_OK
+)
+async def search_offers(
+    title: str = Query(..., min_length=1, description="Подстрока в заголовке предложения"),
+    db: AsyncSession = Depends(get_db),
+):
+    offers = await get_offers_by_title(db, title)
+    if not offers:
+        raise HTTPException(status_code=404, detail="Предложения не найдены")
+    return offers
