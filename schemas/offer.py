@@ -10,6 +10,8 @@ from schemas.city import CityRead
 class OfferBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
+    city_id: Optional[int] = None
+    category_id: Optional[int] = None
     backgroundImageUrl: HttpUrl = Field(alias="background_image_url")
     companyLogoUrl: HttpUrl = Field(alias="company_logo_url")
     companyName: str = Field(..., min_length=1, max_length=100, alias="company_name")

@@ -190,6 +190,15 @@ async def create_offer(db: AsyncSession, title: str, description: str|None,
     if len(categories_ids) > 2:
         raise ValueError("нельзя больше двух категорий")
 
+    for category_id in categories_ids:
+        cat = await db.get(Category, category_id)
+        if not cat:
+            raise NoResultFound(f"category {category_id} not found")
+    for city_item in cities_ids:
+        city = await db.get(City, city_item)
+        if not city:
+            raise NoResultFound(f"City {city_item} not found")
+
     offer = Offer(
         title=title,
         description=description,

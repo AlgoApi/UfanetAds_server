@@ -49,6 +49,8 @@ async def read_offers(
     response_offers: list[OfferRead] = []
     for offer_obj in offers:
         offer_data = OfferRead.model_validate(offer_obj)
+        offer_data.category_id = category_id
+        offer_data.city_id = city_id
         #if category_obj:
         #    offer_data.category = CategoryRead.model_validate(category_obj)
         response_offers.append(offer_data)
@@ -83,8 +85,10 @@ async def add_offer(
 
         offer_data = OfferRead.model_validate(new_offer)
         return offer_data
-    #except Exception:
-    #    raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ошибка при создании предложения")
+    except NoResultFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ошибка при создании предложения")
     finally:
         pass
 

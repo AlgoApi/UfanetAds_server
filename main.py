@@ -19,7 +19,7 @@ logging.basicConfig(
 
 # буфер последних сообщений
 _events_buffer: List[dict] = []
-BUFFER_SIZE = 100  # сколько последних событий держим
+BUFFER_SIZE = 5  # сколько последних событий держим
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
