@@ -47,7 +47,7 @@ async def delete_category_rout(
     except NoResultFound:
         raise HTTPException(status_code=404, detail="Категория не найдена")
     except ValueError as e:
-        linked = str(e).split()[-3]
+        linked = str(e).split()[-4]
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Нельзя удалить категорию: с ней связано {linked} предложений"

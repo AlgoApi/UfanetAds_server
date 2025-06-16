@@ -13,7 +13,7 @@ API_ID = int(os.getenv("TG_API_ID"))
 API_HASH = os.getenv("TG_API_HASH")
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 BACKEND_URL = os.getenv("BACKEND_URL")
-SUPERADMIN_ID = int(os.getenv("SUPERADMIN_ID"))
+SUPERADMIN_ID = [int(i) for i in os.getenv("SUPERADMIN_ID").split(",")]
 
 # --- ЛОГИРОВАНИЕ ---
 logging.basicConfig(
@@ -28,6 +28,8 @@ bot = Client("ufanet_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN
 
 user_context: dict[int, dict[str, dict[str, str|list[int]|Message]]] = {}
 
+timeout = httpx.Timeout(5.0, read=20.0)
+
 # --- ETC ---------------------------------------------------
 async def delete_later(msg: Message, delay: float = 1.0):
     await asyncio.sleep(delay)
@@ -40,7 +42,7 @@ async def check_cred(message: Message) -> str | None:
     user_id = message.from_user.id
     token = SESSIONS.get(user_id)
     if token:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             resp = await client.get(
                 f"{BACKEND_URL}/api/auth/me",
                 headers={"Authorization": f"Bearer {token}"}
@@ -69,7 +71,7 @@ async def start(client: Client, m: Message):
         [InlineKeyboardButton("Добавить связь предложения с городом", callback_data="add_link_offer_city$")],
         [InlineKeyboardButton("Выйти", callback_data="logout")],
     ]
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         resp = await client.get(
             f"{BACKEND_URL}/api/auth/me",
             headers={"Authorization": f"Bearer {token}"}
@@ -77,24 +79,27 @@ async def start(client: Client, m: Message):
         if resp.json().get("role") == RoleEnum.superadmin:
             reply_markup.extend([[InlineKeyboardButton("Создать админа", callback_data="create_admin")],
                                  [InlineKeyboardButton("Удалить связь предложения с городом",
-                                                       callback_data="delete_link_offer_city$")],
+                                                       callback_data="delete_link_offer_city")],
                                  [InlineKeyboardButton("Удалить предложение", callback_data="delete_offer")],
                                  [InlineKeyboardButton("Удалить категорию", callback_data="delete_category")],
                                  [InlineKeyboardButton("Удалить город", callback_data="delete_city")]])
     await m.reply("Вы вошли успешно.", reply_markup=InlineKeyboardMarkup(reply_markup))
+
+
 # --- SUPERADMIN: CREATE ADMIN ----------------------------------
-@ bot.on_callback_query(filters.private & filters.user(SUPERADMIN_ID) & filters.regex("^create_admin$"))
-async def cmd_create_admin(c: Client, m: Message):
+@ bot.on_callback_query(filters.user(SUPERADMIN_ID) & filters.regex("^create_admin$"))
+async def cmd_create_admin(c: Client, m):
     global user_context
     user_id = m.from_user.id
     if not await check_cred(m):
         return
     user_context[user_id] = {"step": {"name": "create_admin_login"}, "ctx": {}}
-    await m.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите логин нового администратора:", reply_markup=ForceReply(True))
+    await m.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите логин нового администратора:", reply_markup=ForceReply(True))
+    await m.answer()
 
 # --- ADMIN: LOGIN ------------------------------------------------
 @ bot.on_message(filters.private & filters.command("login"))
-async def cmd_login(c: Client, m: Message):
+async def cmd_login(c: Client, m):
     global user_context
     user_id = m.from_user.id
     user_context[user_id] = {"step": {"name": "login_login"}, "ctx": {}}
@@ -115,6 +120,7 @@ async def cb_create_offer(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите заголовок предложения:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "create_offer_title"}, "ctx": {}}
+    await q.answer()
 
 # --- DEL OFFER FLOW ----------------------------------------------
 @ bot.on_callback_query(filters.regex("^delete_offer$") & filters.user(SUPERADMIN_ID))
@@ -124,6 +130,7 @@ async def cb_delete_offer(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите заголовок предложения:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "delete_offer_title"}, "ctx": {}}
+    await q.answer()
 
 # --- DEL OFFER LINK CITY FLOW ----------------------------------------------
 @ bot.on_callback_query(filters.regex("^delete_link_offer_city$") & filters.user(SUPERADMIN_ID))
@@ -133,6 +140,7 @@ async def cb_delete_offer_link_city(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите заголовок предложения:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "change_link_offer_title"}, "ctx": {"func_name": "delete"}}
+    await q.answer()
 
 # --- ADD OFFER LINK CITY FLOW ----------------------------------------------
 @ bot.on_callback_query(filters.regex("^add_link_offer_city$"))
@@ -142,6 +150,7 @@ async def cb_add_offer_link_city(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите заголовок предложения:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "change_link_offer_title"}, "ctx": {"ctx": {"func_name": "add"}}}
+    await q.answer()
 
 
 # --- ADD category FLOW ----------------------------------------------
@@ -152,6 +161,7 @@ async def cb_create_category(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите заголовок категории:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "create_category_title"}, "ctx": {}}
+    await q.answer()
 
 # --- DEL category FLOW ----------------------------------------------
 @ bot.on_callback_query(filters.regex("^delete_category$") & filters.user(SUPERADMIN_ID))
@@ -161,6 +171,7 @@ async def cb_delete_category(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите заголовок категории:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "delete_category_title"}, "ctx": {}}
+    await q.answer()
 
 
 # --- ADD cities FLOW ----------------------------------------------
@@ -171,6 +182,7 @@ async def cb_create_city(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите название города:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "create_city_title"}, "ctx": {}}
+    await q.answer()
 
 # --- DEL cities FLOW ----------------------------------------------
 @ bot.on_callback_query(filters.regex("^delete_city$") & filters.user(SUPERADMIN_ID))
@@ -180,6 +192,7 @@ async def cb_create_city(c: Client, q):
         return
     await q.message.reply("Чтобы прервать на любом этапе напишите 'abort'\nВведите название города:", reply_markup=ForceReply(True))
     user_context[user_id] = {"step": {"name": "delete_city_title"}, "ctx": {}}
+    await q.answer()
 
 
 # --- GLOBAL reply_handler ----------------------------------------------
@@ -187,14 +200,18 @@ async def cb_create_city(c: Client, q):
 async def reply_handler(c: Client, m: Message):
     global user_context
     user_id = m.from_user.id
-    token = await check_cred(m)
-    if not token:
-        return
+
     if user_context.get(user_id):
         if not user_context.get(user_id).get("step"):
             return
         if user_context.get(user_id).get("ctx") is None:
             return
+        if user_context.get(user_id).get("step").get("name") in ["login_login", "login_pass"]:
+            token = "loging_process"
+        else:
+            token = await check_cred(m)
+            if not token:
+                return
         text = m.text.strip()
         if not text:
             return
@@ -209,7 +226,7 @@ async def reply_handler(c: Client, m: Message):
             return
         if user_context.get(user_id).get("step").get("name") == "create_admin_pass":
             login = user_context[user_id]["ctx"].get("login")
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.post(f"{BACKEND_URL}/api/auth/signup",
                                          json={
                                              "username": login,
@@ -217,7 +234,7 @@ async def reply_handler(c: Client, m: Message):
                                          },
                                          headers={"Authorization": f"Bearer {token}"})
             await delete_later(m)
-            if resp.status_code == 201:
+            if resp.status_code == 200:
                 await m.reply(f"Администратор {resp.text} успешно создан.")
             else:
                 await m.reply(f"Ошибка при создании: {resp.text}")
@@ -231,7 +248,7 @@ async def reply_handler(c: Client, m: Message):
             return
         if user_context.get(user_id).get("step").get("name") == "login_pass":
             login = user_context[user_id]["ctx"]["login"]
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.post(f"{BACKEND_URL}/api/auth/token",
                                          data={"grant_type": "password", "username": login, "password": text},
                                          headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -243,17 +260,17 @@ async def reply_handler(c: Client, m: Message):
                     [InlineKeyboardButton("Добавить предложение", callback_data="create_offer")],
                     [InlineKeyboardButton("Добавить город", callback_data="create_city")],
                     [InlineKeyboardButton("Добавить категорию", callback_data="create_category")],
-                    [InlineKeyboardButton("Добавить связь предложения с городом", callback_data="add_link_offer_city$")],
+                    [InlineKeyboardButton("Добавить связь предложения с городом", callback_data="add_link_offer_city")],
                     [InlineKeyboardButton("Выйти", callback_data="logout")],
                 ]
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                     resp = await client.get(
                         f"{BACKEND_URL}/api/auth/me",
                         headers={"Authorization": f"Bearer {token}"}
                     )
                     if resp.json().get("role") == RoleEnum.superadmin:
                         reply_markup.extend([[InlineKeyboardButton("Создать админа", callback_data="create_admin")],
-                                             [InlineKeyboardButton("Удалить связь предложения с городом", callback_data="delete_link_offer_city$")],
+                                             [InlineKeyboardButton("Удалить связь предложения с городом", callback_data="delete_link_offer_city")],
                                              [InlineKeyboardButton("Удалить предложение", callback_data="delete_offer")],
                                              [InlineKeyboardButton("Удалить категорию", callback_data="delete_category")],
                                              [InlineKeyboardButton("Удалить город", callback_data="delete_city")]])
@@ -289,12 +306,27 @@ async def reply_handler(c: Client, m: Message):
             return
         if user_context.get(user_id).get("step").get("name") == "create_offer_company":
             user_context[user_id]["ctx"]["company"] = text
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                resp = await client.get(
+                    f"{BACKEND_URL}/api/cities",
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+            msg = await c.send_message(chat_id=user_id, text=resp.text)
+            user_context[user_id]["ctx"]["msg"] = msg
             await m.reply("Введите ID городов через запятую:", reply_markup=ForceReply(True))
             user_context[user_id]["step"]["name"] = "create_offer_cities"
             await delete_later(m)
             return
         if user_context.get(user_id).get("step").get("name") == "create_offer_cities":
             user_context[user_id]["ctx"]["city_ids"] = [int(x) for x in text.split(",") if x.strip().isdigit()]
+            await delete_later(user_context[user_id]["ctx"].get("msg"))
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                resp = await client.get(
+                    f"{BACKEND_URL}/api/categories",
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+            msg = await c.send_message(chat_id=user_id, text=resp.text)
+            user_context[user_id]["ctx"]["msg"] = msg
             await m.reply("Введите ID категорий (до 2) через запятую:", reply_markup=ForceReply(True))
             user_context[user_id]["step"]["name"] = "create_offer_categories"
             await delete_later(m)
@@ -302,21 +334,22 @@ async def reply_handler(c: Client, m: Message):
         if user_context.get(user_id).get("step").get("name") == "create_offer_categories":
             category_ids = [int(x) for x in text.split(",") if x.strip().isdigit()]
             ctx = user_context[user_id].get("ctx")
+            await delete_later(ctx.get("msg"))
             if len(category_ids) > 2:
                 await m.reply(f"Ошибка: ID категорий больше двух")
                 await delete_later(m)
                 return
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.post(
-                    f"{BACKEND_URL}/api/offers/",
+                    f"{BACKEND_URL}/api/offers",
                     json={
                         "title": ctx["title"],
                         "description": ctx["description"],
-                        "backgroundImageUrl": ctx["BackURL"],
-                        "companyLogoUrl": ctx["LogoURL"],
-                        "companyName": ctx["company"],
-                        "cityIds": ctx["city_ids"],
-                        "categoryIds": category_ids
+                        "background_image_url": ctx["BackURL"],
+                        "company_logo_url": ctx["LogoURL"],
+                        "company_name": ctx["company"],
+                        "cities_ids": ctx["city_ids"],
+                        "categories_ids": category_ids
                     },
                     headers={"Authorization": f"Bearer {token}"}
                 )
@@ -326,13 +359,13 @@ async def reply_handler(c: Client, m: Message):
             return
         if user_context.get(user_id).get("step").get("name") == "delete_offer_title":
             title_delete = text
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.get(
                     f"{BACKEND_URL}/api/offers/search",
                     params={"title": title_delete},
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            msg = await c.send_message(chat_id=user_id, text=resp.json())
+            msg = await c.send_message(chat_id=user_id, text=resp.text)
             await m.reply("Введите id нужного предложения для удаления:", reply_markup=ForceReply(True))
             user_context[user_id]["step"]["name"] = "delete_offer_id"
             user_context[user_id]["ctx"]["msg"] = msg
@@ -341,24 +374,24 @@ async def reply_handler(c: Client, m: Message):
         if user_context.get(user_id).get("step").get("name") == "delete_offer_id":
             id_delete = text
             await delete_later(user_context[user_id]["ctx"].get("msg"))
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.delete(
                     f"{BACKEND_URL}/api/offers/{id_delete}",
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            await m.reply(f"изменено: {resp}")
+            await m.reply(f"изменено: {resp.text}")
             del user_context[user_id]
             await delete_later(m)
             return
         if user_context.get(user_id).get("step").get("name") == "change_link_offer_title":
             title_offer_delete = text
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.get(
                     f"{BACKEND_URL}/api/offers/search",
                     params={"title": title_offer_delete},
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            msg = await c.send_message(chat_id=user_id, text=resp.json())
+            msg = await c.send_message(chat_id=user_id, text=resp.text)
             await m.reply("Введите id нужного предложения для изменения связи:", reply_markup=ForceReply(True))
             user_context[user_id]["step"]["name"] = "change_link_offer_id"
             user_context[user_id]["ctx"]["msg"] = msg
@@ -374,13 +407,13 @@ async def reply_handler(c: Client, m: Message):
             return
         if user_context.get(user_id).get("step").get("name") == "change_link_city_title":
             title_city_delete = text
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.get(
                     f"{BACKEND_URL}/api/cities/search",
                     params={"title": title_city_delete},
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            msg = await c.send_message(chat_id=user_id, text=resp.json())
+            msg = await c.send_message(chat_id=user_id, text=resp.text)
             await m.reply("Введите id нужного города для изменения связи:", reply_markup=ForceReply(True))
             user_context[user_id]["step"]["name"] = "change_link_city_id"
             user_context[user_id]["ctx"]["msg"] = msg
@@ -391,19 +424,19 @@ async def reply_handler(c: Client, m: Message):
             id_offer = user_context[user_id]["ctx"].get("id_offer")
             func_name = user_context[user_id]["ctx"].get("func_name")
             await delete_later(user_context[user_id]["ctx"].get("msg"))
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 if func_name == "delete":
                     resp = await client.delete(
-                        f"{BACKEND_URL}/api/offer/{id_offer}/cities/{id_city}",
+                        f"{BACKEND_URL}/api/offers/{id_offer}/cities/{id_city}",
                         headers={"Authorization": f"Bearer {token}"}
                     )
                 else:
                     # добавляем
                     resp = await client.post(
-                        f"{BACKEND_URL}/api/offer/{id_offer}/cities/{id_city}",
+                        f"{BACKEND_URL}/api/offers/{id_offer}/cities/{id_city}",
                         headers={"Authorization": f"Bearer {token}"}
                     )
-            await m.reply(f"Изменено: {resp}")
+            await m.reply(f"Изменено: {resp.text}")
             del user_context[user_id]
             await delete_later(m)
             return
@@ -417,9 +450,9 @@ async def reply_handler(c: Client, m: Message):
         if user_context.get(user_id).get("step").get("name") == "create_category_BackURL":
             backurl = text
             ctx = user_context[user_id].get("ctx")
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.post(
-                    f"{BACKEND_URL}/api/categories/",
+                    f"{BACKEND_URL}/api/categories",
                     json={
                         "name": ctx["category_title"],
                         "image_url": backurl,
@@ -432,13 +465,13 @@ async def reply_handler(c: Client, m: Message):
             return
         if user_context.get(user_id).get("step").get("name") == "delete_category_title":
             title_delete = text
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.get(
                     f"{BACKEND_URL}/api/categories/search",
                     params={"title": title_delete},
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            msg = await c.send_message(chat_id=user_id, text=resp.json())
+            msg = await c.send_message(chat_id=user_id, text=resp.text)
             await m.reply("Введите id нужной категории для удаления:",
                                 reply_markup=ForceReply(True))
             user_context[user_id]["step"]["name"] = "delete_category_id"
@@ -448,20 +481,20 @@ async def reply_handler(c: Client, m: Message):
         if user_context.get(user_id).get("step").get("name") == "delete_category_id":
             id_delete = text
             await delete_later(user_context[user_id]["ctx"].get("msg"))
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.delete(
                     f"{BACKEND_URL}/api/categories/{id_delete}",
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            await c.send_message(chat_id=user_id, text=resp.json())
+            await c.send_message(chat_id=user_id, text=resp.text)
             await m.reply(f"изменено {resp}")
             del user_context[user_id]
             await delete_later(m)
             return
         if user_context.get(user_id).get("step").get("name") == "create_city_title":
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.post(
-                    f"{BACKEND_URL}/api/cities/",
+                    f"{BACKEND_URL}/api/cities",
                     json={
                         "name": text,
                     },
@@ -473,13 +506,13 @@ async def reply_handler(c: Client, m: Message):
             return
         if user_context.get(user_id).get("step").get("name") == "delete_city_title":
             title_delete = text
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.get(
                     f"{BACKEND_URL}/api/cities/search",
                     params={"title": title_delete},
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            msg = await c.send_message(chat_id=user_id, text=resp.json())
+            msg = await c.send_message(chat_id=user_id, text=resp.text)
             user_context[user_id]["step"]["name"] = "delete_city_id"
             user_context[user_id]["ctx"]["msg"] = msg
             await m.reply("Введите id нужного города для удаления:",
@@ -489,14 +522,15 @@ async def reply_handler(c: Client, m: Message):
         if user_context.get(user_id).get("step").get("name") == "delete_city_id":
             id_delete = text
             await delete_later(user_context[user_id]["ctx"].get("msg"))
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.delete(
                     f"{BACKEND_URL}/api/cities/{id_delete}",
                     headers={"Authorization": f"Bearer {token}"}
                 )
-            await m.reply(f"Изменено: {resp}")
+            await m.reply(f"Изменено: {resp.text}")
             await delete_later(m)
             return
+
 
 if __name__ == "__main__":
     bot.run()

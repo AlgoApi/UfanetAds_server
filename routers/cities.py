@@ -45,9 +45,7 @@ async def delete_city_rout(
     except NoResultFound:
         raise HTTPException(status_code=404, detail="Город не найден")
     except ValueError as e:
-        # есть связанные предложения
-        # e.args[0] содержит, например, "City 5 has 3 linked offers"
-        linked = str(e).split()[-3]  # число
+        linked = str(e).split()[-4]  # число
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Нельзя удалить город: с ним связано {linked} предложений"
